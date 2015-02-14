@@ -1,0 +1,19 @@
+<p id="notice"><%= notice %></p>
+
+<p>
+  <strong>Author:</strong>
+  <%= @puzzle.author %>
+</p>
+
+<p>
+  <strong>Title:</strong>
+  <%= @puzzle.title %>
+</p>
+
+<p>
+  <strong>Status:</strong>
+  <%= @puzzle.status %>
+</p>
+
+<%= link_to 'Edit', edit_puzzle_path(@puzzle) %> |
+<%= link_to 'Back', puzzles_path %>

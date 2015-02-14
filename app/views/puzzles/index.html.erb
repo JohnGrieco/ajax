@@ -1,0 +1,57 @@
+<p id="notice"><%= notice %></p>
+<script src="https://code.jquery.com/jquery-2.1.3.min.js">
+
+</script>
+<h1>Listing Puzzles</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Author</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th colspan="3"></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <% @puzzles.each do |puzzle| %>
+      <tr>
+        <td><%= puzzle.author %></td>
+        <td><%= puzzle.title %></td>
+        <td><%= puzzle.status %></td>
+        <td><%= link_to 'Show', puzzle %></td>
+        <td><%= link_to 'Edit', edit_puzzle_path(puzzle) %></td>
+        <td><%= link_to 'Destroy', puzzle, method: :delete, data: { confirm: 'Are you sure?' } %></td>
+      </tr>
+    <% end %>
+
+  </tbody>
+</table>
+<script type="text/javascript">
+    $.ajaxSetup({
+        headers: {
+            'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
+        }
+    });
+  var myData = {
+      'author' : "John",
+      'title' : "Cat",
+      'status' : "dog"
+  };
+    $.ajax({
+        url: '/puzzles',
+        data: JSON.stringify(myData),
+        type: 'POST',
+        crossDomain: true, // enable this
+        //dataType: 'json',
+        contentType: "application/json; charset=utf-8",
+        success: function() { alert("Success"); },
+        error: function() { alert('Failed!'); }
+        //beforeSend:  add_allow_credentials_headers
+    });
+</script>
+
+    <br>
+
+<%= link_to 'New Puzzle', new_puzzle_path %>

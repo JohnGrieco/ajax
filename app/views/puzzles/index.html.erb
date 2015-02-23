@@ -1,6 +1,7 @@
 <p id="notice"><%= notice %></p>
 <script src="https://code.jquery.com/jquery-2.1.3.min.js">
-
+    <%= javascript_include_tag :defaults %>
+    <%= csrf_meta_tag %>
 </script>
 <h1>Listing Puzzles</h1>
 
@@ -22,7 +23,7 @@
         <td><%= puzzle.status %></td>
         <td><%= link_to 'Show', puzzle %></td>
         <td><%= link_to 'Edit', edit_puzzle_path(puzzle) %></td>
-        <td><%= link_to 'Destroy', puzzle, method: :delete, data: { confirm: 'Are you sure?' } %></td>
+        <td><%= button_to 'Destroy', puzzle, method: :delete, data: { confirm: 'Are you sure?' } %></td>
       </tr>
     <% end %>
 
@@ -34,7 +35,7 @@
             'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
         }
     });
-  var myData = {
+ /* var myData = {
       'author' : "John",
       'title' : "Cat",
       'status' : "dog"

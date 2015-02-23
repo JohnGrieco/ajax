@@ -1,0 +1,861 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<meta charset="utf-8">
+<html>
+
+<head>
+    <title>Puzz</title>
+</head>
+
+<body style="background-color:rgb(250, 250, 250)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+
+
+<style>
+    #pieceDelete {
+        fill: red;
+        stroke-width: 2;
+        stroke: rgb(250,250,250);
+        visibility: hidden;
+    }
+    .editDragger {
+        fill: gray;
+        visibility: hidden;
+    }
+    #timelineBackground {
+        fill: rgb(220,210,210);
+    }
+    #editBackground {
+        fill: rgb(195,190,195);
+    }
+    #propsBackground {
+        fill: rgb(150,130,130);
+        stroke-width: 8;
+        stroke: rgb(250,250,250);
+    }
+    #selectBackground {
+        fill: rgb(150,130,130);
+    }
+    #saveButton {
+        fill: rgb(80,10,10);
+    }
+    #playButton {
+        fill: rgb(80,10,10);
+    }
+</style>
+
+<svg id="timelineVP" height="108px">
+    <rect id="timelineBackground" x="0" y="0" height="100px"></rect>
+    <rect id="saveButton" x="8" y="8" height="38px" width="100px"></rect>
+    <rect id="playButton" x="8" y="54" height="38px" width="100px"></rect>
+</svg>
+
+<svg id="puzzleVP">
+    <g id="editGroup">
+        <rect id="editBackground"></rect>
+        <circle id="pieceDelete" cx="0" cy="0" r="10px"></circle>
+        <circle id="editDragger1" class="editDragger" cx="0" cy="0" r="5px"></circle>
+        <circle id="editDragger2" class="editDragger" cx="0" cy="0" r="5px"></circle>
+        <g id="propsGroup" style="visibility:hidden">
+            <rect id="propsBackground" width="200"></rect>
+        </g>
+    </g>
+
+    <g id="selectMenuGroup">
+        <rect id="selectBackground" y="0"></rect>
+    </g>
+</svg>
+
+<script>
+    var browserW = window.innerWidth;
+    var browserH = window.innerHeight; // screen.height, $(window).height(), screen.availHeight
+    var currMaxFrames = 1;
+    var maxFrames = 12;
+    var frames = [[]]; // frames[0] refers to 0th frame in timeline, frames[1] to 1st frame, etc.
+    var timelineFrames = [150];
+    var currFrame = 0;
+    var typing = false;
+    var currPiece;
+    var selectables = [];
+    pageSetUp();
+    var selectCircle = {"obj": d3.select("#selectMenuGroup").append("circle").attr("class", "piece selectable").attr("id", "selectCircle"),
+        "tag": {"cx": parseInt(d3.select("#selectBackground").attr("x")) + parseInt(d3.select("#selectBackground").attr("width"))/2,
+            "cy": parseInt(d3.select("#selectBackground").attr("y")) + .15 * parseInt(d3.select("#selectBackground").attr("height")),
+            "r": 30},
+        "css": {"fill": "rgb(0,0,0)",
+            "stroke-width": 0,
+            "stroke": "rgb(0,0,0)",
+            "visibility": "visible",
+            "opacity": 1
+        }
+    };
+    var selectRect = {"obj": d3.select("#selectMenuGroup").append("rect").attr("class", "piece selectable").attr("id", "selectRect"),
+        "tag": {"x": parseInt(d3.select("#selectBackground").attr("x")) + parseInt(d3.select("#selectBackground").attr("width"))/2 - 25,
+            "y": parseInt(d3.select("#selectBackground").attr("y")) + .3 * parseInt(d3.select("#selectBackground").attr("height")),
+            "width": 50,
+            "height": 70
+        },
+        "css": {"fill": "rgb(0,0,0)",
+            "stroke-width": 0,
+            "stroke":  "rgb(0,0,0)",
+            "visibility": "visible",
+            "opacity": 1
+        }
+    };
+    var selectLine = {"obj": d3.select("#selectMenuGroup").append("line").attr("class", "piece selectable").attr("id", "selectLine"),
+        "tag": {"x1": parseInt(d3.select("#selectBackground").attr("x")) + parseInt(d3.select("#selectBackground").attr("width"))/2 - 30,
+            "y1": parseInt(d3.select("#selectBackground").attr("y")) + .5 * parseInt(d3.select("#selectBackground").attr("height")),
+            "x2": parseInt(d3.select("#selectBackground").attr("x")) + parseInt(d3.select("#selectBackground").attr("width"))/2 + 30,
+            "y2": parseInt(d3.select("#selectBackground").attr("y")) + .5 * parseInt(d3.select("#selectBackground").attr("height")) + 60
+        },
+        "css": {"stroke-width": 8,
+            "stroke": "rgb(0,0,0)",
+            "visibility": "visible",
+            "opacity": 1
+        }
+    };
+    createSelectables();
+    var pieceDrag = d3.behavior.drag()
+            .on("dragstart", pieceDown)
+            .on("drag", pieceMove)
+            .on("dragend", function() {return this.classList.contains("selectable") ? selectUp() : pieceUp();});
+    d3.selectAll(".piece") 					// Includes both selection pieces and puzzle pieces
+            .call(pieceDrag);
+    var resizeDrag = d3.behavior.drag()
+            .on("dragstart", resizeDown)
+            .on("drag", resizeMove)
+            .on("dragend", resizeUp);
+    d3.selectAll(".editDragger")
+            .call(resizeDrag);
+    function pieceDown() {
+        currPiece = getObjFromDom(this, currFrame);
+        d3.select("#pieceDelete")
+                .style("visibility", "hidden");
+        d3.select("#propsGroup")
+                .style("visibility", "hidden");
+        d3.selectAll(".editDragger")
+                .style("visibility", "hidden");
+    }
+    function pieceMove() {
+        var mX = parseInt(d3.mouse(this)[0]);
+        var mY = parseInt(d3.mouse(this)[1]);
+        var palette = d3.select("#editBackground");
+        switch (currPiece.obj[0][0].nodeName) {
+            case "circle":
+                currPiece.obj
+                        .attr("cx", Math.max(currPiece.tag.r, Math.min(palette.attr("width") - currPiece.tag.r, mX)))
+                        .attr("cy", Math.max(currPiece.tag.r, Math.min(palette.attr("height") - currPiece.tag.r, mY)));
+                currPiece.tag.cx = currPiece.obj.attr("cx");
+                currPiece.tag.cy = currPiece.obj.attr("cy");
+                break;
+            case "rect":
+                currPiece.obj
+                        .attr("x", Math.max(0, Math.min(palette.attr("width") - currPiece.tag.width, mX - currPiece.tag.width/2)))
+                        .attr("y", Math.max(0, Math.min(palette.attr("height") - currPiece.tag.height, mY - currPiece.tag.height/2)));
+                currPiece.tag.x = currPiece.obj.attr("x");
+                currPiece.tag.y = currPiece.obj.attr("y");
+                break;
+            case "line":
+                var xdist = parseInt(currPiece.obj.attr("x2")) - parseInt(currPiece.obj.attr("x1"));
+                var ydist = parseInt(currPiece.obj.attr("y2")) - parseInt(currPiece.obj.attr("y1"));
+                if ((mX - Math.max(xdist/2, -xdist/2)) >= 0 && (mX + Math.max(xdist/2, -xdist/2)) <= palette.attr("width")) {
+                    currPiece.obj
+                            .attr("x1", mX - xdist/2)
+                            .attr("x2", mX + xdist/2);
+                    currPiece.tag.x1 = currPiece.obj.attr("x1");
+                    currPiece.tag.x2 = currPiece.obj.attr("x2");
+                }
+                if ((mY - Math.max(ydist/2, -ydist/2)) >= 0 && (mY + Math.max(ydist/2, -ydist/2)) <= palette.attr("height")) {
+                    currPiece.obj
+                            .attr("y1", mY - ydist/2)
+                            .attr("y2", mY + ydist/2);
+                    currPiece.tag.y1 = currPiece.obj.attr("y1");
+                    currPiece.tag.y2 = currPiece.obj.attr("y2");
+                }
+                break;
+            default:
+                console.log("Error: Not a shape. pieceMove()");
+        }
+    }
+    function selectUp() {
+        var selBack = d3.select("#selectBackground");
+        var newElement = {};
+        $.extend(true, newElement, currPiece); // Clone all of currPiece into newElement.
+        newElement.obj = d3.select("#editGroup")
+                .insert(currPiece.obj[0][0].nodeName, "#pieceDelete")
+                .attr("class", "piece puzzle")
+                .call(pieceDrag);
+        // Reset the selection pieces to the selection menu
+        switch (currPiece.obj[0][0].nodeName) {
+            case "circle":
+                selectCircle.obj
+                        .attr("cx", parseInt(selBack.attr("x")) + parseInt(selBack.attr("width"))/2)
+                        .attr("cy", parseInt(selBack.attr("y")) + .15 * parseInt(selBack.attr("height")));
+                selectCircle.tag.cx = selectCircle.obj.attr("cx");
+                selectCircle.tag.cy = selectCircle.obj.attr("cy");
+                break;
+            case "rect":
+                selectRect.obj
+                        .attr("x", parseInt(selBack.attr("x")) + parseInt(selBack.attr("width"))/2 - 25)
+                        .attr("y", parseInt(selBack.attr("y")) + .3 * parseInt(selBack.attr("height")));
+                selectRect.tag.x = selectRect.obj.attr("x");
+                selectRect.tag.y = selectRect.obj.attr("y");
+                break;
+            case "line":
+                selectLine.obj
+                        .attr("x1", parseInt(selBack.attr("x")) + parseInt(selBack.attr("width"))/2 - 30)
+                        .attr("y1", parseInt(selBack.attr("y")) + .5 * parseInt(selBack.attr("height")))
+                        .attr("x2", parseInt(selBack.attr("x")) + parseInt(selBack.attr("width"))/2 + 30)
+                        .attr("y2", parseInt(selBack.attr("y")) + .5 * parseInt(selBack.attr("height")) + 60);
+                currPiece.tag.x1 = currPiece.obj.attr("x1");
+                currPiece.tag.y1 = currPiece.obj.attr("y1");
+                currPiece.tag.x2 = currPiece.obj.attr("x2");
+                currPiece.tag.y2 = currPiece.obj.attr("y2");
+                break;
+            default:
+                console.log("Error: Not a shape. selectUp()");
+        }
+        // All frames after (and including) currFrame will have the newElement added to it.
+        //  The user can then go and delete the objects they do not want to persist through the timeline.
+        //  When the user deletes an object, the currFrame and all after will have the object deleted.
+        //for (var i = currFrame; i < currMaxFrames; i++) {
+        //	frames[i].push($.extend(true, {}, newElement)); // Create clone of newElement for each frame so there will be
+        //}													//  completely independent objects to manipulate each frame,
+        //  even though they use the same DOM Element.
+        for (var i = 0; i < currMaxFrames; i++) {
+            frames[i].push($.extend(true, {}, newElement));
+
+            if (i < currFrame) {
+                frames[i][frames[i].length-1].css.visibility = "hidden";
+                frames[i][frames[i].length-1].css.opacity = 0;
+            }
+        }
+        redrawPuzzle();
+    }
+    function pieceUp() {
+        var pieceDelete = d3.select("#pieceDelete");
+        var propsGroup = d3.select("#propsGroup");
+        var editDrag1 = d3.select("#editDragger1");
+        var editDrag2 = d3.select("#editDragger2");
+        var editBack = d3.select("#editBackground");
+        var propsBack = d3.select("#propsBackground");
+        switch (currPiece.obj[0][0].nodeName) {
+            case "circle":
+                pieceDelete
+                        .attr("cx", parseFloat(currPiece.tag.cx) + currPiece.tag.r * Math.cos(3 * Math.PI / 4))
+                        .attr("cy", parseFloat(currPiece.tag.cy) - currPiece.tag.r * Math.sin(3 * Math.PI / 4));
+                editDrag1
+                        .attr("cx", parseFloat(currPiece.tag.cx) + parseFloat(currPiece.tag.r))
+                        .attr("cy", parseFloat(currPiece.tag.cy));
+                if (currPiece.tag.cx < editBack.attr("width") / 2) {		// If currPiece is beyond halfway of the palette
+                    propsGroup
+                            .attr("transform", "translate(" + (editBack.attr("width") - propsBack.attr("width") + 4) + ")");
+                }
+                else {
+                    propsGroup
+                            .attr("transform", "translate(0)");
+                }
+                break;
+            case "rect":
+                pieceDelete
+                        .attr("cx", currPiece.tag.x)
+                        .attr("cy", currPiece.tag.y);
+                editDrag1
+                        .attr("cx", parseFloat(currPiece.tag.x) + parseFloat(currPiece.tag.width))
+                        .attr("cy", parseFloat(currPiece.tag.y) + parseFloat(currPiece.tag.height));
+                if (currPiece.tag.x < editBack.attr("width") / 2) {		// If currPiece is beyond halfway of the palette
+                    propsGroup
+                            .attr("transform", "translate(" + (editBack.attr("width") - propsBack.attr("width") + 4) + ")");
+                }
+                else {
+                    propsGroup
+                            .attr("transform", "translate(0)");
+                }
+                break;
+            case "line":
+                var midptX = (parseInt(currPiece.tag.x1) + parseInt(currPiece.tag.x2))/2;
+                var midptY = (parseInt(currPiece.tag.y1) + parseInt(currPiece.tag.y2))/2;
+                pieceDelete
+                        .attr("cx", midptX)
+                        .attr("cy", midptY);
+                editDrag1
+                        .attr("cx", currPiece.tag.x1)
+                        .attr("cy", currPiece.tag.y1);
+                editDrag2
+                        .attr("cx", currPiece.tag.x2)
+                        .attr("cy", currPiece.tag.y2)
+                        .style("visibility", "visible");
+                if (midptX < editBack.attr("width") / 2) {
+                    propsGroup
+                            .attr("transform", "translate(" + (editBack.attr("width") - propsBack.attr("width") + 4) + ")");
+                }
+                else {
+                    propsGroup
+                            .attr("transform", "translate(0)");
+                }
+                break;
+            default:
+                console.log("Error: Not a shape. pieceUp()");
+        }
+        updatePropertyText();
+        pieceDelete
+                .style("visibility", "visible");
+        propsGroup
+                .style("visibility", "visible");
+        editDrag1
+                .style("visibility", "visible");
+    }
+    function resizeDown() {
+        d3.select("#pieceDelete")
+                .style("visibility", "hidden");
+        d3.select("#propsGroup")
+                .style("visibility", "hidden");
+    }
+    function resizeMove() {
+        var mX = d3.mouse(this)[0];
+        var mY = d3.mouse(this)[1];
+        var palette = d3.select("#editBackground");
+        var drag = d3.select(this);
+        drag
+                .attr("cx", Math.max(parseInt(drag.attr("r")), Math.min(palette.attr("width") - parseInt(drag.attr("r")), mX)))
+                .attr("cy", Math.max(parseInt(drag.attr("r")), Math.min(palette.attr("height") - parseInt(drag.attr("r")), mY)));
+        switch (currPiece.obj[0][0].nodeName) {
+            case "circle":
+                currPiece.obj
+                        .attr("r", dist(mX, mY, currPiece.tag.cx, currPiece.tag.cy));
+                break;
+            case "rect":
+                currPiece.obj
+                        .attr("width", Math.abs(mX - parseInt(currPiece.tag.x)))
+                        .attr("height", Math.abs(mY - parseInt(currPiece.tag.y)));
+                if (mX <= currPiece.tag.x) {
+                    currPiece.obj.attr("x", parseInt(mX));
+                }
+                if (mY <= currPiece.tag.y) {
+                    currPiece.obj.attr("y", parseInt(mY));
+                }
+
+                /*if (mX > parseInt(currPiece.obj.attr("x")) + parseInt(currPiece.obj.attr("width"))/2) {
+                 currPiece.obj
+                 .attr("width", parseInt(currPiece.obj.attr("width")) + d3.event.dx * 2)
+                 .attr("x", parseFloat(currPiece.obj.attr("x")) - d3.event.dx);
+                 if (mY > parseInt(currPiece.obj.attr("y")) + parseInt(currPiece.obj.attr("height"))/2) {
+                 currPiece.obj
+                 .attr("height", parseInt(currPiece.obj.attr("height")) + d3.event.dy * 2)
+                 .attr("y", parseFloat(currPiece.obj.attr("y")) - d3.event.dy);
+                 }
+                 else {
+                 currPiece.obj
+                 .attr("height", parseInt(currPiece.obj.attr("height")) - d3.event.dy * 2)
+                 .attr("y", parseFloat(currPiece.obj.attr("y")) + d3.event.dy);
+                 }
+                 }
+                 else {
+                 currPiece.obj
+                 .attr("width", parseInt(currPiece.obj.attr("width")) - d3.event.dx * 2)
+                 .attr("x", parseFloat(currPiece.obj.attr("x")) + d3.event.dx)
+                 if (mY > parseInt(currPiece.obj.attr("y")) + parseInt(currPiece.obj.attr("height"))/2) {
+                 currPiece.obj
+                 .attr("height", parseInt(currPiece.obj.attr("height")) + d3.event.dy * 2)
+                 .attr("y", parseFloat(currPiece.obj.attr("y")) - d3.event.dy);
+                 }
+                 else {
+                 currPiece.obj
+                 .attr("height", parseInt(currPiece.obj.attr("height")) - d3.event.dy * 2)
+                 .attr("y", parseFloat(currPiece.obj.attr("y")) + d3.event.dy);
+                 }
+                 }	*/
+                break;
+            case "line":
+                if (mX >= 0 && mX <= palette.attr("width")) {
+                    if (drag.attr("id") === "editDragger1") {
+                        currPiece.obj
+                                .attr("x1", mX);
+                    }
+                    else {
+                        currPiece.obj
+                                .attr("x2", mX);
+                    }
+                }
+                if (mY >= 0 && mY <= palette.attr("height")) {
+                    if (drag.attr("id") === "editDragger1") {
+                        currPiece.obj
+                                .attr("y1", mY);
+                    }
+                    else {
+                        currPiece.obj
+                                .attr("y2", mY);
+                    }
+                }
+                /*
+                 *	If the distance between the line you are resizing and another shape's center is less than
+                 *	the radius of that object, then snap to the center.
+                 */
+                for (var i in frames[currFrame]) {
+                    if (frames[currFrame][i] != currPiece) {
+                        if (dist(drag.attr("cx"), drag.attr("cy"), frames[currFrame][i].tag.cx, frames[currFrame][i].tag.cy) <= frames[currFrame][i].tag.r) {
+                            if (drag.attr("id") === "editDragger1") {
+                                currPiece.obj
+                                        .attr("x1", frames[currFrame][i].tag.cx)
+                                        .attr("y1", frames[currFrame][i].tag.cy);
+                            }
+                            else {
+                                currPiece.obj
+                                        .attr("x2", frames[currFrame][i].tag.cx)
+                                        .attr("y2", frames[currFrame][i].tag.cy);
+                            }
+                        }
+                    }
+                }
+                break;
+            default:
+                console.log("Error: Not a shape. resizeMove()");
+        }
+    }
+    function resizeUp() {
+        var pieceDelete = d3.select("#pieceDelete");
+        var editDrag1 = d3.select("#editDragger1");
+        var editDrag2 = d3.select("#editDragger2");
+        switch (currPiece.obj[0][0].nodeName) {
+            case "circle":
+                currPiece.tag.r = currPiece.obj.attr("r");
+                pieceDelete
+                        .attr("cx", parseFloat(currPiece.tag.cx) + currPiece.tag.r * Math.cos(3 * Math.PI / 4))
+                        .attr("cy", parseFloat(currPiece.tag.cy) - currPiece.tag.r * Math.sin(3 * Math.PI / 4));
+                editDrag1
+                        .attr("cx", parseFloat(currPiece.tag.cx) + parseFloat(currPiece.tag.r))
+                        .attr("cy", parseFloat(currPiece.tag.cy));
+                break;
+            case "rect":
+                currPiece.tag.x = currPiece.obj.attr("x");
+                currPiece.tag.y = currPiece.obj.attr("y");
+                currPiece.tag.width = parseInt(currPiece.obj.attr("width"));
+                currPiece.tag.height = parseInt(currPiece.obj.attr("height"));
+                pieceDelete
+                        .attr("cx", currPiece.tag.x)
+                        .attr("cy", currPiece.tag.y);
+                editDrag1
+                        .attr("cx", parseFloat(currPiece.tag.x) + parseFloat(currPiece.tag.width))
+                        .attr("cy", parseFloat(currPiece.tag.y) + parseFloat(currPiece.tag.height));
+                break;
+            case "line":
+                currPiece.tag.x1 = currPiece.obj.attr("x1");
+                currPiece.tag.y1 = currPiece.obj.attr("y1");
+                currPiece.tag.x2 = currPiece.obj.attr("x2");
+                currPiece.tag.y2 = currPiece.obj.attr("y2");
+                var midptX = (parseInt(currPiece.tag.x1) + parseInt(currPiece.tag.x2))/2;
+                var midptY = (parseInt(currPiece.tag.y1) + parseInt(currPiece.tag.y2))/2;
+                pieceDelete
+                        .attr("cx", midptX)
+                        .attr("cy", midptY);
+                editDrag1
+                        .attr("cx", currPiece.tag.x1)
+                        .attr("cy", currPiece.tag.y1);
+                editDrag2
+                        .attr("cx", currPiece.tag.x2)
+                        .attr("cy", currPiece.tag.y2);
+                break;
+            default:
+                console.log("Error: Not a shape. resizeUp()");
+        }
+        updatePropertyText();
+        pieceDelete
+                .style("visibility", "visible");
+        d3.select("#propsGroup")
+                .style("visibility", "visible");
+    }
+    function updatePropertyText() {
+        var propsG = d3.select("#propsGroup");
+        var tagKeys = Object.keys(currPiece.tag);
+        var cssKeys = Object.keys(currPiece.css);
+        /*propsG
+         .selectAll("text")
+         .remove();
+         for (var i = 0; i < Math.min((tagKeys.length + cssKeys.length), 9); i++) {
+         if (i < tagKeys.length) {
+         propsG											// Text for key
+         .append("text")
+         .attr("x", 30)
+         .attr("y", 40 + i * 60)
+         .style("font-size", 20)
+         .text(tagKeys[i]);
+         propsG											// Text for value
+         .append("text")
+         .attr("x", 100)
+         .attr("y", 40 + i * 60)
+         .attr("class", "textInput number")
+         .style("font-size", 20)
+         .text(parseFloat(currPiece.tag[tagKeys[i]]));
+         }
+         else {
+         propsG
+         .append("text")
+         .attr("x", 30)
+         .attr("y", 40 + i * 60)
+         .style("font-size", 20)
+         .text(cssKeys[i - tagKeys.length]);
+         propsG
+         .append("text")
+         .attr("x", 100)
+         .attr("y", 40 + i * 60)
+         .attr("class", "textInput number")
+         .style("font-size", 20)
+         .text(currPiece.css[cssKeys[i - tagKeys.length]]);
+         }
+         }*/
+        propsG
+                .selectAll("text")
+                .remove();
+       /* for (var i = 0; i < Math.min((tagKeys.length + cssKeys.length), 9); i++) {
+            if (i < tagKeys.length) {
+                propsG											// Text for key
+                        .append("text")
+                        .attr("x", 30)
+                        .attr("y", 40 + i * 60)
+                        .style("font-size", 20)
+                        .text(tagKeys[i]);
+                SI()
+                        .container(propsG)
+                        .bind(tagKeys[i])
+                        .x(100)
+                        .y(40 + i * 60)
+                        .text(parseFloat(currPiece.tag[tagKeys[i]]));
+            }
+            else {
+                propsG
+                        .append("text")
+                        .attr("x", 30)
+                        .attr("y", 40 + i * 60)
+                        .style("font-size", 20)
+                        .text(cssKeys[i - tagKeys.length]);
+                SI()
+                        .container(propsG)
+                        .bind(cssKeys[i - tagKeys.length])
+                        .x(100)
+                        .y(40 + i * 60)
+                        .text(currPiece.css[cssKeys[i - tagKeys.length]]);
+            }
+        }*/
+    }
+    function redrawPuzzle() {
+        d3.select("#pieceDelete")
+                .style("visibility", "hidden");
+        d3.select("#propsGroup")
+                .style("visibility", "hidden");
+        d3.selectAll(".editDragger")
+                .style("visibility", "hidden");
+        d3.select("#editGroup")
+                .selectAll(".piece.puzzle")
+                .remove();
+        d3.select("#editGroup")
+                .selectAll(".piece.puzzle")
+                .data(frames[currFrame])
+                .enter()
+                .insert(function(d) {					// Before adding DOM Element, use d3 to change all tags and css properties.
+                    for (var key in d.tag) {
+                        d3.select(d.obj[0][0])
+                                .attr(key, d.tag[key]);
+                    }
+                    for (var key in d.css) {
+                        d3.select(d.obj[0][0])
+                                .style(key, d.css[key]);
+                    }
+                    return d.obj[0][0];
+                }, "#pieceDelete");
+    }
+    function frameTransition(start, end) {
+        var props, frObj;
+        var frDoms = [];
+        d3.select("#pieceDelete")
+                .style("visibility", "hidden");
+        d3.select("#propsGroup")
+                .style("visibility", "hidden");
+        d3.selectAll(".editDragger")
+                .style("visibility", "hidden");
+        if (end > start) {
+            for (var i = start; i < end; i++) {
+                for (var j in frames[i]) {
+                    frObj = getObjFromDom(frames[i][j].obj[0][0], i+1);
+                    if (frObj !== null) {
+                        props = {};
+                        for (var p in frames[i][j].tag) {
+                            props[p] = frObj.tag[p];
+                        }
+                        for (var p in frames[i][j].css) {
+                            if (p !== "opacity" || frObj.css[p] !== frames[i][j].css[p]) {
+                                props[p] = frObj.css[p];
+                            }
+                        }
+                        $(frames[i][j].obj[0][0]).velocity(props, {visibility: frObj.css.visibility}, 400);
+                    }
+                }
+            }
+        }
+        else {
+            for (var i = start; i > end; i--) {
+                for (var j = 0; j < Math.min(frames[i].length, frames[i-1].length); j++) {
+                    frObj = getObjFromDom(frames[i][j].obj[0][0], i-1);
+                    if (frObj !== null) {
+                        props = {};
+                        for (var p in frames[i][j].tag) {
+                            props[p] = frObj.tag[p];
+                        }
+                        for (var p in frames[i][j].css) {
+                            if (p !== "opacity" || frObj.css[p] !== frames[i][j].css[p]) {
+                                props[p] = frObj.css[p];
+                            }
+                        }
+                        $(frames[i][j].obj[0][0]).velocity(props, {visibility: frObj.css.visibility}, 400);
+                    }
+                }
+            }
+        }
+    }
+    function changeFrame() {
+        var startFrame = currFrame;
+        currFrame = timelineFrames.indexOf(parseFloat(d3.select(this).attr("cx")));
+        frameTransition(startFrame, currFrame);
+        d3.select("#currentFrame")
+                .attr("cx", timelineFrames[currFrame]);
+        //redrawPuzzle();
+    }
+    function addFrame() {
+        var padding = (browserW - 125 - timelineFrames[0]) / maxFrames;
+        if (timelineFrames.length < maxFrames) {
+            timelineFrames.push(timelineFrames[timelineFrames.length-1] + padding);
+            d3.select(".frameLine")
+                    .attr("x1", timelineFrames[0])
+                    .attr("x2", timelineFrames[timelineFrames.length-1]);
+            d3.select("#timelineVP").insert("circle", "#currentFrame")
+                    .attr("cx", timelineFrames[timelineFrames.length-1])
+                    .attr("cy", 50)
+                    .attr("r", 10)
+                    .attr("class", "frame")
+                    .style("fill", "white")
+                    .style("stroke", "rgb(80, 10, 10)")
+                    .style("stroke-width", "2")
+                    .on("click", changeFrame);
+            currMaxFrames++;
+            currFrame = currMaxFrames-1;
+            frames.push([]);
+            $.extend(true, frames[currFrame], frames[currFrame-1]); // Clone all objects of previous frame into newly created frame
+            frameTransition(currFrame-1, currFrame);
+            d3.select("#currentFrame")
+                    .attr("cx", timelineFrames[currFrame]);
+        }
+    }
+    function deleteFrame() {
+        if (timelineFrames.length > 1) {
+            timelineFrames.pop();
+            d3.select(".frameLine")
+                    .attr("x1", timelineFrames[0])
+                    .attr("x2", timelineFrames[timelineFrames.length-1]);
+            d3.select("#timelineVP").selectAll(".frame")
+                    .data(timelineFrames)
+                    .exit()
+                    .remove();
+            currMaxFrames--;
+            //frames[timelineFrames.length] = [];
+            frames.pop();
+            if (currFrame == timelineFrames.length) {
+                currFrame--;
+                d3.select("#currentFrame")
+                        .attr("cx", timelineFrames[currFrame]);
+                redrawPuzzle();
+            }
+        }
+    }
+    function deletePiece() {
+        /*for (var i = currFrame; i < maxFrames; i++) {					    // Delete piece from current frame along with all
+         for (var j in frames[i]) {								        //  frames following.
+         if (frames[i][j].obj[0][0] === currPiece.obj[0][0]) {
+         frames[i].splice(j, 1);
+         }
+         }
+         }				*/
+        currPiece.css.visibility = "hidden";
+        currPiece.css.opacity = 0;
+        currPiece = null;
+        redrawPuzzle();
+    }
+    function getObjFromDom(dom, fr) {
+        for (var i in frames[fr]) {											//  For every element in frames[fr],
+            if (frames[fr][i].obj[0][0] === dom) {							//   compare its DOM element to the dom
+                return frames[fr][i];							    		//   element parameter.
+            }
+        }
+        for (var i in selectables) {										// For every selection menu element,
+            if (selectables[i].obj[0][0] === dom) {							//  compare its DOM element to the dom
+                return selectables[i];										//  element parameter.
+            }
+        }
+        return null;														// Otherwise, the DOM is not associated with an object in fr.
+    }
+    function dist(x1, y1, x2, y2) {
+        return (Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
+    }
+    function post() {
+        /*var sending = {};
+         var puzz = frames;
+         /*for (var i = 0; i < currMaxFrames; i++) {
+         puzz.push(frames[i]);
+         }
+         sending["author"] = "Iain";
+         sending["title"] = "Puzzle-Title";
+         sending["status"] = "Pending";
+         sending["puzz"] = puzz;
+         console.log(sending);
+         $.ajax({
+         type: "POST",
+         url: "https://young-sands-3216.herokuapp.com/puzzles",
+         data: {"author": "Iain", "title": "First Ever Puzzle", "status": "Pending"},
+         crossDomain: true,
+         success: function() {console.log("Success")}
+         });*/
+        var myData = {
+            'author' : "Iain",
+            'title' : "Puzz",
+            'status' : "Not dog"
+        };
+        $.ajax({
+            url: "/puzzles",
+            data: JSON.stringify(myData),
+            type: 'POST',
+            crossDomain: true,
+            contentType: "application/json; charset=utf-8",
+            success: function() { alert("Your Puzzle Was Uploaded"); },
+            error: function() { alert('Failed!'); }
+        });
+    }
+    function pageSetUp() {
+        /*for (var i = 0; i < maxFrames; i++) {
+         frames[i] = [];
+         }*/
+        var timeline = d3.select("#timelineVP")
+                .attr("width", browserW);
+        d3.select("#timelineBackground")
+                .attr("width", browserW - 8);
+        timeline.append("line")
+                .attr("x1", timelineFrames[0])
+                .attr("y1", 50)
+                .attr("x2", timelineFrames[timelineFrames.length-1])
+                .attr("y2", 50)
+                .attr("class", "frameLine")
+                .style("stroke", "rgb(80, 10, 10)")
+                .style("stroke-width", "8");
+        timeline.selectAll("circle")
+                .data(timelineFrames)
+                .enter()
+                .append("circle")
+                .attr("cx", function(d) {return d;})
+                .attr("cy", 50)
+                .attr("r", 10)
+                .attr("class", "frame")
+                .style("fill", "white")
+                .style("stroke", "rgb(80, 10, 10)")
+                .style("stroke-width", "2")
+                .on("click", changeFrame);
+        timeline.append("circle")
+                .attr("cx", timelineFrames[currFrame])
+                .attr("cy", 50)
+                .attr("r", d3.select(".frame").attr("r") - 3)
+                .attr("id", "currentFrame")
+                .style("fill", "rgb(80, 10, 10)");
+        // Button to add frames
+        timeline.append("circle")
+                .attr("cx", browserW - 125)
+                .attr("cy", 50)
+                .attr("r", 20)
+                .attr("id", "addFrameButton")
+                .style("fill", "black")
+                .on("click", addFrame);
+        timeline.append("line")
+                .attr("x1", timeline.select("#addFrameButton").attr("cx") - 15)
+                .attr("y1", 50)
+                .attr("x2", parseInt(timeline.select("#addFrameButton").attr("cx")) + 15)
+                .attr("y2", 50)
+                .style("stroke", "white")
+                .style("stroke-width", "2")
+                .style("pointer-events", "none");
+        timeline.append("line")
+                .attr("x1", timeline.select("#addFrameButton").attr("cx"))
+                .attr("y1", timeline.select("#addFrameButton").attr("cy") - 15)
+                .attr("x2", timeline.select("#addFrameButton").attr("cx"))
+                .attr("y2", parseInt(timeline.select("#addFrameButton").attr("cy")) + 15)
+                .style("stroke", "white")
+                .style("stroke-width", "2")
+                .style("pointer-events", "none");
+        // Button to delete frames
+        timeline.append("circle")
+                .attr("cx", browserW - 75)
+                .attr("cy", 50)
+                .attr("r", 20)
+                .attr("id", "deleteFrameButton")
+                .style("fill", "black")
+                .on("click", deleteFrame);
+        timeline.append("line")
+                .attr("x1", timeline.select("#deleteFrameButton").attr("cx") - 15)
+                .attr("y1", 50)
+                .attr("x2", parseInt(timeline.select("#deleteFrameButton").attr("cx")) + 15)
+                .attr("y2", 50)
+                .style("stroke", "white")
+                .style("stroke-width", "2")
+                .style("pointer-events", "none");
+        // Area to edit puzzle
+        d3.select("#puzzleVP")
+                .attr("width", browserW)
+                .attr("height", browserH);
+        d3.select("#editBackground")
+                .attr("width", .9 * browserW - 8)
+                .attr("height", d3.select("#puzzleVP").attr("height"))
+                .on("click", redrawPuzzle);
+        d3.select("#selectBackground")
+                .attr("x", .9 * browserW)
+                .attr("width", .1 * browserW - 8)
+                .attr("height",  d3.select("#puzzleVP").attr("height"));
+        d3.select("#propsBackground")
+                .attr("height",  d3.select("#puzzleVP").attr("height"));
+        d3.select("#pieceDelete")
+                .on("click", deletePiece);
+        d3.select("#playButton")
+                .on("mouseover", function() {d3.select(this).style("fill", "rgb(140,80,80)");})
+                .on("mouseout", function() {d3.select(this).style("fill", "rgb(80,10,10)");})
+                .on("click", function() {frameTransition(0, currMaxFrames-1);});
+        d3.select("#saveButton")
+                .on("click", post);
+    }
+    function createSelectables() {
+        selectables.push(selectCircle);
+        selectables.push(selectRect);
+        selectables.push(selectLine);
+        for (var key in selectCircle.tag) {					// For every key in the selectCircle object,
+            d3.select(selectCircle.obj[0][0])				//  change the attr and style according to
+                    .attr(key, selectCircle.tag[key]);				//  the tag and css properties described above.
+        }
+        for (var key in selectCircle.css) {
+            d3.select(selectCircle.obj[0][0])
+                    .style(key, selectCircle.css[key]);
+        }
+        for (var key in selectRect.tag) {					// For every key in the selectCircle object,
+            d3.select(selectRect.obj[0][0])					//  change the attr and style according to
+                    .attr(key, selectRect.tag[key]);				//  the tag and css properties described above.
+        }
+        for (var key in selectRect.css) {
+            d3.select(selectRect.obj[0][0])
+                    .style(key, selectRect.css[key]);
+        }
+        for (var key in selectLine.tag) {					// For every key in the selectLine object...
+            d3.select(selectLine.obj[0][0])
+                    .attr(key, selectLine.tag[key]);
+        }
+        for (var key in selectLine.css) {
+            d3.select(selectLine.obj[0][0])
+                    .style(key, selectLine.css[key]);
+        }
+    }
+</script>
+</body>
+</html>

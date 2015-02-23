@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="DataSourceManagerImpl" format="xml" hash="3368689966">
+  <component name="DataSourceManagerImpl" format="xml" hash="3773416625">
     <data-source source="LOCAL" name="Rails post-puzzle: development" uuid="c24f17c8-035b-4c7c-862d-db9e30d2d1dd">
       <driver-ref>sqlite.xerial</driver-ref>
       <synchronize>true</synchronize>
